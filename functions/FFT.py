@@ -13,7 +13,7 @@ from scipy.integrate import quad
 from scipy.optimize import fsolve
 
 
-def fft_Lewis(K, S0, r, T, cf, interp="cubic"):
+def fft_Lewis(K, S0, r, diff, T, cf, interp="cubic"):
     """ 
     K = vector of strike
     S = spot price scalar
@@ -38,22 +38,22 @@ def fft_Lewis(K, S0, r, T, cf, interp="cubic"):
     
     if interp == "linear":
         spline_lin = interp1d(ks, integral_value, kind='linear')
-        prices = S0 - np.sqrt(S0 * K) * np.exp(-r*T)/np.pi * spline_lin( np.log(S0/K) )
+        prices = S0*np.exp((diff-r) *T) - np.sqrt(S0 * K) * np.exp(-(r+r-diff)*T/2)/np.pi * spline_lin( np.log(S0/K) + diff*T )
     elif interp == "cubic":
         spline_cub = interp1d(ks, integral_value, kind='cubic')
-        prices = S0 - np.sqrt(S0 * K) * np.exp(-r*T)/np.pi * spline_cub( np.log(S0/K) )
+        prices = S0*np.exp((diff-r) *T) - np.sqrt(S0 * K) * np.exp(-(r+r-diff)*T/2)/np.pi * spline_cub( np.log(S0/K) + diff*T )
     return prices
 
 
 
-def IV_from_Lewis(K, S0, T, r, cf, disp=False):
+def IV_from_Lewis(K, S0, T, diff,cf, disp=False):
     """ Implied Volatility from the Lewis formula 
-    K = strike; S0 = spot stock; T = time to maturity; r = interest rate
+    K = strike; S0 = spot stock; T = time to maturity; diff = drift
     cf = characteristic function """
-    k = np.log(S0/K)
+    k = np.log(S0/K) + diff * T
     def obj_fun(sig):
         integrand = lambda u: np.real( np.exp(u*k*1j)\
-                            * (cf(u - 0.5j) - np.exp(1j*u*r*T+0.5*r*T) * np.exp(-0.5*T*(u**2+0.25)*sig**2) ) )\
+                            * (cf(u - 0.5j) -  np.exp(-0.5*T*(u**2+0.25)*sig**2) ) )\
                             * 1/(u**2 + 0.25)
         int_value = quad(integrand, 1e-15, 2000, limit=2000, full_output=1 )[0]
         return int_value

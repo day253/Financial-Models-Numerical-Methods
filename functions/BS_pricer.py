@@ -39,13 +39,14 @@ class BS_pricer():
     
         Option_info:  of type Option_param. It contains (S0,K,T) i.e. current price, strike, maturity in years
         """
-        self.r = Process_info.r           # interest rate
+        self.r = 0.1                      # risk free rate
         self.sig = Process_info.sig       # diffusion coefficient
         self.S0 = Option_info.S0          # current price
         self.K = Option_info.K            # strike
         self.T = Option_info.T            # maturity in years
         self.exp_RV = Process_info.exp_RV # function to generate solution of GBM
-        
+        self.diff = Process_info.r        # drift, r-q-repo
+
         self.price = 0
         self.S_vec = None
         self.price_vec = None
@@ -63,7 +64,7 @@ class BS_pricer():
         
     
     @staticmethod
-    def BlackScholes(payoff='call', S0=100., K=100., T=1., r=0.1, sigma=0.2 ):
+    def BlackScholes(payoff='call', S0=100., K=100., T=1., r=0.1, diff=0.1, sigma=0.2 ):
         """ Black Scholes closed formula:
             payoff: call or put.
             S0: float.    initial stock/index level.
@@ -72,13 +73,13 @@ class BS_pricer():
             r: float constant risk-free short rate.
             sigma: volatility factor in diffusion term. """
    
-        d1 = (np.log(S0/K) + (r + sigma**2 / 2) * T) / (sigma * np.sqrt(T))
-        d2 = (np.log(S0/K) + (r - sigma**2 / 2) * T) / (sigma * np.sqrt(T))
+        d1 = (np.log(S0/K) + (diff + sigma**2 / 2) * T) / (sigma * np.sqrt(T))
+        d2 = (np.log(S0/K) + (diff - sigma**2 / 2) * T) / (sigma * np.sqrt(T))
 
         if payoff=="call":
-            return S0 * ss.norm.cdf( d1 ) - K * np.exp(-r * T) * ss.norm.cdf( d2 )
+            return S0 * ss.norm.cdf( d1 )*np.exp((diff-r)*T) - K * np.exp(-r * T) * ss.norm.cdf( d2 )
         elif payoff=="put":
-            return K * np.exp(-r * T) * ss.norm.cdf( -d2 ) - S0 * ss.norm.cdf( -d1 )
+            return K * np.exp(-r * T) * ss.norm.cdf( -d2 ) - S0 * ss.norm.cdf( -d1 )*np.exp((diff-r)*T)
         else:
             raise ValueError("invalid type. Set 'call' or 'put'")
     
@@ -94,13 +95,13 @@ class BS_pricer():
         """ 
         Black Scholes closed formula:
         """
-        d1 = (np.log(self.S0/self.K) + (self.r + self.sig**2 / 2) * self.T) / (self.sig * np.sqrt(self.T))
-        d2 = (np.log(self.S0/self.K) + (self.r - self.sig**2 / 2) * self.T) / (self.sig * np.sqrt(self.T))
+        d1 = (np.log(self.S0/self.K) + (self.diff + self.sig**2 / 2) * self.T) / (self.sig * np.sqrt(self.T))
+        d2 = (np.log(self.S0/self.K) + (self.diff - self.sig**2 / 2) * self.T) / (self.sig * np.sqrt(self.T))
 
         if self.payoff=="call":
-            return self.S0 * ss.norm.cdf( d1 ) - self.K * np.exp(-self.r * self.T) * ss.norm.cdf( d2 )
+            return self.S0 * ss.norm.cdf( d1 ) *np.exp((self.diff-self.r) * self.T)- self.K * np.exp(-self.r * self.T) * ss.norm.cdf( d2 )
         elif self.payoff=="put":
-            return self.K * np.exp(-self.r * self.T) * ss.norm.cdf( -d2 ) - self.S0 * ss.norm.cdf( -d1 )
+            return self.K * np.exp(-self.r * self.T) * ss.norm.cdf( -d2 ) - self.S0 * ss.norm.cdf( -d1 )*np.exp((self.diff-self.r) * self.T)
         else:
             raise ValueError("invalid type. Set 'call' or 'put'")
     
@@ -111,13 +112,13 @@ class BS_pricer():
         Price obtained by inversion of the characteristic function
         """
         k = np.log(self.K/self.S0)
-        cf_GBM = partial(cf_normal, mu=( self.r - 0.5 * self.sig**2 )*self.T, sig=self.sig*np.sqrt(self.T))  # function binding
+        cf_GBM = partial(cf_normal, mu=( self.diff - 0.5 * self.sig**2 )*self.T, sig=self.sig*np.sqrt(self.T))  # function binding
         
         if self.payoff == "call":
-            call = self.S0 * Q1(k, cf_GBM, np.inf) - self.K * np.exp(-self.r*self.T) * Q2(k, cf_GBM, np.inf)   # pricing function
+            call = self.S0 * Q1(k, cf_GBM, np.inf)*np.exp((self.diff-self.r) * self.T) - self.K * np.exp(-self.r*self.T) * Q2(k, cf_GBM, np.inf)   # pricing function
             return call
         elif self.payoff == "put":
-            put = self.K * np.exp(-self.r*self.T) * (1 - Q2(k, cf_GBM, np.inf)) - self.S0 * (1-Q1(k, cf_GBM, np.inf))  # pricing function
+            put = self.K * np.exp(-self.r*self.T) * (1 - Q2(k, cf_GBM, np.inf)) - self.S0 * (1-Q1(k, cf_GBM, np.inf))*np.exp((self.diff-self.r) * self.T)  # pricing function
             return put
         else:
             raise ValueError("invalid type. Set 'call' or 'put'")
@@ -129,11 +130,11 @@ class BS_pricer():
         K is an array of strikes
         """
         K = np.array(K)
-        cf_GBM = partial(cf_normal, mu=( self.r - 0.5 * self.sig**2 )*self.T, sig=self.sig*np.sqrt(self.T))  # function binding
+        cf_GBM = partial(cf_normal, mu=( - 0.5 * self.sig**2 )*self.T, sig=self.sig*np.sqrt(self.T))  # function binding
         if self.payoff == "call":
-            return fft_Lewis(K, self.S0, self.r, self.T, cf_GBM, interp="cubic")
+            return fft_Lewis(K, self.S0, self.r, self.diff, self.T, cf_GBM, interp="cubic")
         elif self.payoff == "put":    # put-call parity
-            return fft_Lewis(K, self.S0, self.r, self.T, cf_GBM, interp="cubic") - self.S0 + K*np.exp(-self.r*self.T)
+            return fft_Lewis(K, self.S0, self.r, self.diff, self.T, cf_GBM, interp="cubic") - self.S0*np.exp((self.diff-self.r) * self.T) + K*np.exp(-self.r*self.T)
         else:
             raise ValueError("invalid type. Set 'call' or 'put'")
             
@@ -141,9 +142,9 @@ class BS_pricer():
     def IV_Lewis(self):
         """ Implied Volatility from the Lewis formula """
     
-        cf_GBM = partial(cf_normal, mu=( self.r - 0.5 * self.sig**2 )*self.T, sig=self.sig*np.sqrt(self.T))  # function binding
+        cf_GBM = partial(cf_normal, mu=( - 0.5 * self.sig**2 )*self.T, sig=self.sig*np.sqrt(self.T))  # function binding
         if self.payoff == "call":
-            return IV_from_Lewis(self.K, self.S0, self.T, self.r, cf_GBM)
+            return IV_from_Lewis(self.K, self.S0, self.T, self.diff, cf_GBM)
         elif self.payoff == "put":
             raise NotImplementedError
         else:
@@ -215,9 +216,9 @@ class BS_pricer():
         
         sig2 = self.sig**2 
         dxx = dx**2
-        a = ( (dt/2) * ( (self.r-0.5*sig2)/dx - sig2/dxx ) )
+        a = ( (dt/2) * ( (self.diff-0.5*sig2)/dx - sig2/dxx ) )
         b = ( 1 + dt * ( sig2/dxx + self.r ) )
-        c = (-(dt/2) * ( (self.r-0.5*sig2)/dx + sig2/dxx ) )
+        c = (-(dt/2) * ( (self.diff-0.5*sig2)/dx + sig2/dxx ) )
         
         D = sparse.diags([a, b, c], [-1, 0, 1], shape=(Nspace-2, Nspace-2)).tocsc()
             
@@ -325,34 +326,37 @@ class BS_pricer():
         order = order of the polynomial for the regression 
         """
         
-        if self.payoff!="put":
-            raise ValueError("invalid type. Set 'call' or 'put'")
-        
         dt = self.T/(N-1)          # time interval
         df = np.exp(-self.r * dt)  # discount factor per time time interval
         
         X0 = np.zeros((paths,1))
-        increments = ss.norm.rvs(loc=(self.r-self.sig**2/2)*dt, scale=np.sqrt(dt)*self.sig, size=(paths,N-1))
+        increments = ss.norm.rvs(loc=(self.diff-self.sig**2/2)*dt, scale=np.sqrt(dt)*self.sig, size=(paths,N-1))
         X = np.concatenate((X0,increments), axis=1).cumsum(1)
         S = self.S0 * np.exp(X)
         
-        H = np.maximum(self.K - S, 0)   # intrinsic values for put option
+        if self.payoff == "call":
+            H = np.maximum(S - self.K , 0)
+        else:
+            H = np.maximum(self.K - S, 0)   # intrinsic values for put option
         V = np.zeros_like(H)            # value matrix
         V[:,-1] = H[:,-1]
 
         # Valuation by LS Method
         for t in range(N-2, 0, -1):
-            good_paths = H[:,t] > 0    
-            rg = np.polyfit( S[good_paths, t], V[good_paths, t+1] * df, 2)    # polynomial regression
-            C = np.polyval( rg, S[good_paths,t] )                             # evaluation of regression  
-    
-            exercise = np.zeros( len(good_paths), dtype=bool)
-            exercise[good_paths] = H[good_paths,t] > C
-    
-            V[exercise,t] = H[exercise,t]
-            V[exercise,t+1:] = 0
-            discount_path = (V[:,t] == 0)
-            V[discount_path,t] = V[discount_path,t+1] * df
+            good_paths = H[:,t] > 0   
+            if any(good_paths) > 0: 
+                rg = np.polyfit( S[good_paths, t], V[good_paths, t+1] * df, 2)    # polynomial regression
+                C = np.polyval( rg, S[good_paths,t] )                             # evaluation of regression  
+        
+                exercise = np.zeros( len(good_paths), dtype=bool)
+                exercise[good_paths] = H[good_paths,t] > C
+        
+                V[exercise,t] = H[exercise,t]
+                V[exercise,t+1:] = 0
+                discount_path = (V[:,t] == 0)
+                V[discount_path,t] = V[discount_path,t+1] * df
+            else:
+                V[:,t] = V[:,t+1] * df
     
         V0 = np.mean(V[:,1]) * df  # 
         return V0
